@@ -12,6 +12,63 @@ require('dotenv').config();
 import { User } from "../models/user";
 import { SocialAccount } from "../models/socialAccount";
 
+const authenticate = async (name: string, email: string, provider: string, displayName: string, id: any, cb: any) => {
+    const user = await User.findOne({ where: {email}});
+
+    if (user != null) {
+        let socialAccount = await SocialAccount.findOne({ where: { social_provider: provider, social_id: id, user_id: user.id } });
+
+        if (socialAccount == null) {
+            cb("No user found with this social account", null);
+        } else {
+            let data = {
+                id: user!.id,
+                name: user!.name,
+                email: user!.email
+            };
+            cb(null, data);
+        }
+
+    } else {
+        var salt = bcrypt.genSaltSync(10);
+        var hashedPassword = bcrypt.hashSync(email+id, salt);
+        let newUser = await User.create({
+            name: displayName,
+            email,
+            password: hashedPassword
+        });
+
+        await SocialAccount.create({
+            user_id: newUser.id,
+            social_id: id,
+            display_name: displayName,
+            social_provider: provider
+        });
+
+        let data = {
+            id: newUser.id,
+            name: name!,
+            email
+        };
+        cb(null, data);
+    }
+}
+
+const connect = async (id: any, provider: string, displayName: string, cb: any) => {
+    let user = await SocialAccount.findOne({ where: {social_id: id} });
+
+    if (user != null) {
+        cb("This account already been associated.", false);
+    } else {
+        let data = {
+            id: id,
+            name: displayName,
+            provider: provider
+        }
+        cb(null, data);
+    }
+}
+
 module.exports = function(passport: any) {
 
     passport.use(
@@ -44,45 +101,7 @@ module.exports = function(passport: any) {
             callbackURL: "/api/v1/auth/google/callback",
         }, async (accessToken: any, refreshToken: any, profile: GoogleProfile, cb: any) => {
             let email = profile.emails![0].value;
-            const user = await User.findOne({ where: {email}});
-
-            if (user != null) {
-                let socialAccount = await SocialAccount.findOne({ where: { social_provider: "google", social_id: profile.id, user_id: user.id } });
-
-                if (socialAccount == null) {
-                    cb("No user found with this social account", null);
-                } else {
-                    let data = {
-                        id: user!.id,
-                        name: user!.name,
-                        email: user!.email
-                    };
-                    cb(null, data);
-                }
-
-            } else {
-                var salt = bcrypt.genSaltSync(10);
-                var hashedPassword = bcrypt.hashSync(email+profile.id, salt);
-                let newUser = await User.create({
-                    name: profile.displayName,
-                    email,
-                    password: hashedPassword
-                });
-
-                await SocialAccount.create({
-                    user_id: newUser.id,
-                    social_id: profile.id,
-                    display_name: profile.displayName,
-                    social_provider: "google"
-                });
-
-                let data = {
-                    id: newUser.id,
-                    name: profile.name!,
-                    email
-                }
-                cb(null, data);
-            }
+            authenticate(profile.displayName, email, profile.provider, profile.displayName, profile.id, cb);
         })
     );
 
@@ -93,18 +112,7 @@ module.exports = function(passport: any) {
             callbackURL: "/api/v1/connect/google/callback",
             scope: ['profile', 'email']
         }, async (accessToken: any, refreshToken: any, profile: GoogleProfile, cb: any) => {
-            let user = await SocialAccount.findOne({ where: {social_id: profile.id} });
-
-            if (user != null) {
-                cb("This account already been associated.", false);
-            } else {
-                let data = {
-                    id: profile.id,
-                    name: profile.displayName,
-                    provider: profile.provider
-                }
-                cb(null, data);
-            }
+            connect(profile.id, profile.provider, profile.displayName, cb);
         })
     );
 
@@ -116,45 +124,7 @@ module.exports = function(passport: any) {
             profileFields: ['displayName', 'email']
         }, async (accessToken: any, refreshToken: any, profile: FacebookProfile, cb: any) => {
             let email = profile.emails![0].value;
-            const user = await User.findOne({ where: {email}});
-
-            if (user != null) {
-                let socialAccount = await SocialAccount.findOne({ where: { social_provider: "facebook", social_id: profile.id, user_id: user.id } });
-
-                if (socialAccount == null) {
-                    cb("No user found with this social account", null);
-                } else {
-                    let data = {
-                        id: user!.id,
-                        name: user!.name,
-                        email: user!.email
-                    };
-                    cb(null, data);
-                }
-
-            } else {
-                var salt = bcrypt.genSaltSync(10);
-                var hashedPassword = bcrypt.hashSync(email+profile.id, salt);
-                let newUser = await User.create({
-                    name: profile.displayName,
-                    email,
-                    password: hashedPassword
-                });
-
-                await SocialAccount.create({
-                    user_id: newUser.id,
-                    social_id: profile.id,
-                    display_name: profile.displayName,
-                    social_provider: "facebook"
-                });
-
-                let data = {
-                    id: newUser.id,
-                    name: profile.name!,
-                    email
-                }
-                cb(null, data);
-            }
+            authenticate(profile.displayName, email, profile.provider, profile.displayName, profile.id, cb);
         })
     );
 
@@ -165,18 +135,7 @@ module.exports = function(passport: any) {
             callbackURL: "/api/v1/connect/facebook/callback",
             scope: ['email']
         }, async (accessToken: any, refreshToken: any, profile: GoogleProfile, cb: any) => {
-            let user = await SocialAccount.findOne({ where: {social_id: profile.id} });
-
-            if (user != null) {
-                cb("associated", false);
-            } else {
-                let data = {
-                    id: profile.id,
-                    name: profile.displayName,
-                    provider: profile.provider
-                }
-                cb(null, data);
-            }
+            connect(profile.id, profile.provider, profile.displayName, cb);
         })
     );
 
@@ -188,45 +147,7 @@ module.exports = function(passport: any) {
             scope: [Scope.IDENTIFY, Scope.EMAIL],
         }, async (accessToken: any, refreshToken: any, profile: Profile, cb: any) => {
             let email = profile.emails![0].value;
-            const user = await User.findOne({ where: {email}});
-
-            if (user != null) {
-                let socialAccount = await SocialAccount.findOne({ where: { social_provider: "discord", social_id: profile.id, user_id: user.id } });
-
-                if (socialAccount == null) {
-                    cb("No user found with this social account", null);
-                } else {
-                    let data = {
-                        id: user!.id,
-                        name: user!.name,
-                        email: user!.email
-                    };
-                    cb(null, data);
-                }
-
-            } else {
-                var salt = bcrypt.genSaltSync(10);
-                var hashedPassword = bcrypt.hashSync(email+profile.id, salt);
-                let newUser = await User.create({
-                    name: profile.username!,
-                    email,
-                    password: hashedPassword
-                });
-
-                await SocialAccount.create({
-                    user_id: newUser.id,
-                    social_id: profile.id,
-                    display_name: profile.displayName!,
-                    social_provider: "discord"
-                });
-
-                let data = {
-                    id: newUser.id,
-                    name: profile.name!,
-                    email
-                }
-                cb(null, data);
-            }
+            authenticate(profile.displayName!, email, profile.provider, profile.username!, profile.id, cb);
         })
     );
 
@@ -237,20 +158,7 @@ module.exports = function(passport: any) {
             callbackURL: "/api/v1/connect/discord/callback",
             scope: [Scope.IDENTIFY, Scope.EMAIL],
         }, async (accessToken: any, refreshToken: any, profile: Profile, cb: any) => {
-            if (accessToken == null) cb("unauthorized", false);
-
-            let user = await SocialAccount.findOne({ where: {social_id: profile.id} });
-
-            if (user != null) {
-                cb("This account already been associated.", false);
-            } else {
-                let data = {
-                    id: profile.id,
-                    name: profile.displayName,
-                    provider: profile.provider
-                }
-                cb(null, data);
-            }
+            connect(profile.id, profile.provider, profile.username!, cb);
         })
     );
 
@@ -262,45 +170,7 @@ module.exports = function(passport: any) {
             scope: ['user:email'],
         }, async (accessToken: any, refreshToken: any, profile: GithubProfile, cb: any) => {
             let email = profile.emails![0].value;
-            const user = await User.findOne({ where: {email}});
-
-            if (user != null) {
-                let socialAccount = await SocialAccount.findOne({ where: { social_provider: "github", social_id: profile.id, user_id: user.id } });
-
-                if (socialAccount == null) {
-                    cb("No user found with this social account", null);
-                } else {
-                    let data = {
-                        id: user!.id,
-                        name: user!.name,
-                        email: user!.email
-                    };
-                    cb(null, data);
-                }
-
-            } else {
-                var salt = bcrypt.genSaltSync(10);
-                var hashedPassword = bcrypt.hashSync(email+profile.id, salt);
-                let newUser = await User.create({
-                    name: profile.username!,
-                    email,
-                    password: hashedPassword
-                });
-
-                await SocialAccount.create({
-                    user_id: newUser.id,
-                    social_id: profile.id,
-                    display_name: profile.username!,
-                    social_provider: "github"
-                });
-
-                let data = {
-                    id: newUser.id,
-                    name: profile.name!,
-                    email
-                }
-                cb(null, data);
-            }
+            authenticate(profile.username!, email, profile.provider, profile.username!, profile.id, cb);
         })
     )
 
@@ -312,7 +182,6 @@ module.exports = function(passport: any) {
             scope: ['user:email'],
             passReqToCallback: true
         }, async (req: any, accessToken: any, refreshToken: any, profile: GithubProfile, cb: any) => {
-            console.log(accessToken)
             let user = await SocialAccount.findOne({ where: {social_id: profile.id} });
 
             if (user != null) {
