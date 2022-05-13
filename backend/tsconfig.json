@@ -1,0 +1,15 @@
+{
+  "extends": "@tsconfig/node18/tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "sourceMap": true,
+    "esModuleInterop": true,
+    "target": "esnext",
+    "moduleResolution": "Node",
+    "strict": true,
+  },
+  "include": ["index.ts"],
+  "exclude": ["node_modules"]
+}
